@@ -1,0 +1,24 @@
+# Java / Maven
+target/
+*.class
+*.log
+
+# Node / React
+node_modules/
+dist/
+.vite/
+.npm-cache/
+
+# Environment files
+.env
+.env.local
+application-local.yml
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Eclipse generated output
+build/
