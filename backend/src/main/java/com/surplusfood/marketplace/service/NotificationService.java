@@ -16,7 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.context.ApplicationEventPublisher;
+import com.surplusfood.marketplace.event.NotificationCreatedEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,8 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
-    private final EmailService emailService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public NotificationResponse sendNotification(User user, String title, String messageContent, NotificationType type) {
@@ -42,19 +42,7 @@ public class NotificationService {
 
         NotificationResponse response = mapToResponse(saved);
 
-        try {
-            messagingTemplate.convertAndSendToUser(
-                    user.getEmail(),
-                    "/queue/notifications",
-                    response
-            );
-            log.info("Dispatched WebSocket notification to user: {}", user.getEmail());
-        } catch (Exception e) {
-            log.warn("Failed to dispatch WebSocket message: {}", e.getMessage());
-        }
-
-        String emailBody = String.format("Hello %s,\n\n%s\n\nBest regards,\nSurplus Food Marketplace Team", user.getFullName(), messageContent);
-        emailService.sendEmail(user.getEmail(), title, emailBody);
+        eventPublisher.publishEvent(new NotificationCreatedEvent(response, user.getEmail(), user.getFullName()));
 
         return response;
     }

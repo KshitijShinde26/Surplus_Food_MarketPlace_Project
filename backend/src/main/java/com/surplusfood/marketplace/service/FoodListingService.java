@@ -16,17 +16,11 @@ import com.surplusfood.marketplace.repository.BusinessRepository;
 import com.surplusfood.marketplace.repository.CategoryRepository;
 import com.surplusfood.marketplace.repository.FoodListingRepository;
 import com.surplusfood.marketplace.util.PageMapper;
-import com.surplusfood.marketplace.repository.UserRepository;
-import com.surplusfood.marketplace.repository.WishlistRepository;
-import com.surplusfood.marketplace.entity.NotificationType;
-import com.surplusfood.marketplace.entity.User;
-import com.surplusfood.marketplace.entity.Wishlist;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import com.surplusfood.marketplace.event.FoodListingCreatedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -44,10 +38,7 @@ public class FoodListingService {
     private final BusinessRepository businessRepository;
     private final CategoryRepository categoryRepository;
     private final FoodListingMapper foodListingMapper;
-    private final UserRepository userRepository;
-    private final WishlistRepository wishlistRepository;
-    private final NotificationService notificationService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public FoodListingResponse createListing(Long ownerId, FoodListingRequest request) {
@@ -96,39 +87,7 @@ public class FoodListingService {
         FoodListing savedListing = foodListingRepository.save(listing);
         FoodListingResponse response = foodListingMapper.toResponse(savedListing);
 
-        try {
-            messagingTemplate.convertAndSend("/topic/listings", response);
-            log.info("Broadcasted food listing to WebSocket topic.");
-        } catch (Exception e) {
-            log.warn("Failed to broadcast food listing: {}", e.getMessage());
-        }
-
-        if (lat != null && lon != null) {
-            try {
-                List<User> nearbyUsers = userRepository.findNearbyConsumersAndNgos(lat.doubleValue(), lon.doubleValue(), 10.0);
-                Set<Long> notifiedUserIds = nearbyUsers.stream()
-                        .map(User::getId)
-                        .collect(Collectors.toSet());
-
-                String nearbyMsg = String.format("A new surplus food listing '%s' is available near you from %s!",
-                        savedListing.getName(), business.getBusinessName());
-                for (User user : nearbyUsers) {
-                    notificationService.sendNotification(user, "New Food Nearby", nearbyMsg, NotificationType.NEW_FOOD_NEARBY);
-                }
-
-                List<Wishlist> wishlisters = wishlistRepository.findByBusinessId(business.getId());
-                String wishlistMsg = String.format("Your favorite business '%s' just posted a new listing: '%s'!",
-                        business.getBusinessName(), savedListing.getName());
-                for (Wishlist w : wishlisters) {
-                    User user = w.getUser();
-                    if (!notifiedUserIds.contains(user.getId())) {
-                        notificationService.sendNotification(user, "New Food from Favorite Business", wishlistMsg, NotificationType.NEW_FOOD_NEARBY);
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Failed to find nearby users or send notifications: {}. Continuing operation.", e.getMessage());
-            }
-        }
+        eventPublisher.publishEvent(new FoodListingCreatedEvent(response));
 
         return response;
     }
